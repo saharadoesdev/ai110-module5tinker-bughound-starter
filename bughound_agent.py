@@ -175,26 +175,41 @@ class BugHoundAgent:
         text = text.strip()
         parsed = self._try_json_loads(text)
         if isinstance(parsed, list):
-            return self._normalize_issues(parsed)
+            normalized = self._normalize_issues(parsed)
+            if parsed and not normalized:
+                return None
+            return normalized
 
         array_str = self._extract_first_json_array(text)
         if array_str:
             parsed2 = self._try_json_loads(array_str)
             if isinstance(parsed2, list):
-                return self._normalize_issues(parsed2)
+                normalized2 = self._normalize_issues(parsed2)
+                if parsed2 and not normalized2:
+                    return None
+                return normalized2
 
         return None
 
     def _normalize_issues(self, arr: List[Any]) -> List[Dict[str, str]]:
+        allowed_severity = {"low", "medium", "high"}
         issues: List[Dict[str, str]] = []
         for item in arr:
             if not isinstance(item, dict):
                 continue
+
+            issue_type = str(item.get("type", "")).strip()
+            severity = str(item.get("severity", "")).strip().lower()
+            msg = str(item.get("msg", "")).strip()
+
+            if not issue_type or severity not in allowed_severity or not msg:
+                continue
+
             issues.append(
                 {
-                    "type": str(item.get("type", "Issue")),
-                    "severity": str(item.get("severity", "Unknown")),
-                    "msg": str(item.get("msg", "")).strip(),
+                    "type": issue_type,
+                    "severity": severity.title(),
+                    "msg": msg,
                 }
             )
         return issues

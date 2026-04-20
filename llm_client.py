@@ -43,23 +43,36 @@ class GeminiClient:
         """
         Sends a single request to Gemini.
 
-        UPDATED: Added try/except to handle rate limits and API errors gracefully.
-        If an error occurs, it returns an empty string, triggering the agent's 
-        heuristic fallback logic.
+        API failures are raised so the caller can log the exact error and then
+        decide whether to fall back to heuristics.
         """
         try:
+            combined_prompt = f"{system_prompt}\n\n{user_prompt}"
             response = self.model.generate_content(
-                [
-                    {"role": "system", "parts": [system_prompt]},
-                    {"role": "user", "parts": [user_prompt]},
-                ],
+                # [
+                #     {"role": "system", "parts": [system_prompt]},
+                #     {"role": "user", "parts": [user_prompt]},
+                # ],
+                combined_prompt,
                 generation_config={"temperature": self.temperature},
             )
 
-            # Defensive: response.text can be None or raise an error if blocked by filters.
-            return response.text or ""
-            
+            # Defensive: text may be empty when content is blocked or filtered.
+            text = response.text or ""
+            if text.strip():
+                return text
+
+            finish_reason = "unknown"
+            try:
+                candidates = getattr(response, "candidates", None) or []
+                if candidates:
+                    finish_reason = str(getattr(candidates[0], "finish_reason", "unknown"))
+            except Exception:
+                pass
+
+            raise RuntimeError(
+                f"Gemini returned empty text (finish_reason={finish_reason})."
+            )
+
         except Exception as e:
-            # Returning empty string allows the agent to detect the failure 
-            # and switch to offline rules.
-            return ""
+            raise RuntimeError(f"Gemini API request failed: {e}") from e
